@@ -1,0 +1,170 @@
+import csv
+
+from scipy import stats
+import csv
+from sys import argv
+
+def read_tsv_file(tsv_file):
+    """
+    Read data from a TSV file into a DataFrame.
+    
+    arguments:
+        tsv_file (str): File path of the input TSV file.
+    
+    returns:
+        list of dicts: List of dictionaries containing the data from the TSV file.
+    """
+    tsv_data_list = []
+    with open(tsv_file) as infile:
+        tsv_reader = csv.DictReader(infile, delimiter="\t")
+        for i in tsv_reader:
+            tsv_data_list.append(i)
+    return tsv_data_list
+    
+def get_pairs(samples):
+    '''
+    Generates pairs of sample names from a list of samples.
+    
+    arguments:
+        samples (list): A list of sample names.
+        
+    returns:
+        list of tuples: A list of tuples where each tuple contains a pair of sample names.
+    '''
+    pairs = []
+    for i in range(len(samples)):
+        for j in range(i + 1, len(samples)):
+            pairs.append((samples[i], samples[j]))
+    return pairs
+
+
+def extract_groups(_dict, sample1_string, sample2_string):
+    '''
+    Extracts values corresponding to Sample1 and Sample2 from a dictionary
+        
+        arguments: 
+                _dict : Dictionary containing data
+                sample1_string : String indicating Sample1
+                sample2_string : String indicating Sample2
+            
+        returns:
+                dict: Dictionary containing 'g1' and 'g2'
+    '''
+    g1 = []
+    g2 = []
+    for key, value in _dict.items():
+        if sample1_string in key:
+            try:
+                g1.append(float(value))
+            except ValueError:
+                pass
+        elif sample2_string in key:
+            try:
+                g2.append(float(value))
+            except ValueError:
+                pass
+
+    assert g1, f"Sample name '{sample1_string}' does not exist in the data."
+    assert g2, f"Sample name '{sample2_string}' does not exist in the data."
+
+    return g1, g2
+
+
+
+
+def do_ttest(g1, g2):
+    '''
+    Perform a two-sample t-test and print the results
+        
+        arguments: 
+                g1 : List of float as group 1 for the t-test 
+                g2 : List of float as group 2 for the t-test 
+            
+        returns:
+                t_statistic: t-statistic as float
+                p-value: p-value as float 
+    '''
+    t_statistic, p_value = stats.ttest_ind(g1, g2)
+    abs_t_statistic = abs(t_statistic)
+    return abs_t_statistic, p_value
+
+
+def get_significance(p_value):
+    '''
+    Determines the significance level based on the given p-value.
+    
+    arguments:
+        p_value (float): The p-value from a statistical test.
+        
+    returns:
+        str: A string representing the significance level, one of '', '*', '**', or '***'.
+    '''
+    if p_value < 0.005:
+        return "***"
+    elif p_value < 0.01:
+        return "**"
+    elif p_value < 0.05:
+        return "*"
+    else:
+        return ""
+
+
+def write_tsv_file(tsv_file, data):
+    """
+    Write data to a TSV file.
+    
+    arguments:
+        tsv_file (str): File path of the output TSV file.
+        data (list of dicts): Data to be written to the TSV file
+    
+    returns:
+        
+    """
+    with open(tsv_file,'w', newline='') as outfile:
+        column_names = data[0].keys()  
+        writer = csv.DictWriter(outfile, fieldnames=column_names, delimiter='\t')
+        writer.writeheader()
+        writer.writerows(data)
+        
+def main(tsv_path, samples, output_filename):
+    '''
+    Main routine for chemo_compare.py
+    Processes the data from a TSV file containing chemical samples
+        
+        arguments: 
+            tsv_path (str): The path to the input TSV file.
+            samples (list): A list of sample names to compare.
+            output_filename (str): The name of the output TSV file to store the results
+        
+        returns:
+             None
+    '''
+    
+    tsv_data = read_tsv_file(tsv_path)
+    pairs = get_pairs(samples)
+    new_tsv_data = []
+
+    for _dict in tsv_data:
+        new_dict = _dict.copy()
+        for pair in pairs:
+            extracted_group = extract_groups(_dict, pair[0], pair[1])
+            t_stat, p_val = do_ttest(extracted_group[0], extracted_group[1])
+            significance = get_significance(p_val)
+            new_key = pair[0] + '_vs_' + pair[1]
+            t_stat_key = new_key + '_t_stat'
+            p_val_key = new_key + '_p_val'
+            sig_key = new_key + '_significance' 
+            new_dict[t_stat_key] = t_stat
+            new_dict[p_val_key] = p_val
+            new_dict[sig_key] = significance
+        new_tsv_data.append(new_dict)
+    
+    write_tsv_file(output_filename, new_tsv_data)
+
+
+tsv_path = argv[1]
+output_filename = argv[2]
+samples = argv[3:]
+
+main(tsv_path, samples, output_filename)
+
